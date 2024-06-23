@@ -1,0 +1,40 @@
+{
+  "name": "nitro.db",
+  "version": "1.0.0",
+  "description": "A lightweight and versatile database management package for Node.js, written in TypeScript.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": [
+    "database",
+    "sqlite",
+    "json",
+    "mysql",
+    "yaml",
+    "mongodb",
+    "postgresql",
+    "cache"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^7.4.0",
+    "mongodb": "^4.0.0",
+    "pg": "^8.0.0",
+    "mysql2": "^2.3.0",
+    "yamljs": "^0.4.0",
+    "crypto": "^1.0.2",
+    "zlib": "^1.0.0",
+    "fs": "^0.0.1-security",
+    "util": "^0.12.4",
+    "events": "^3.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^16.0.0",
+    "typescript": "^4.3.5"
+  }
+}
