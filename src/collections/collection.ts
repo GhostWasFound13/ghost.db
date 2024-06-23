@@ -3,24 +3,35 @@ import { transformValue, determineType } from '../utils/transform';
 import { parseValue } from '../utils/parse';
 import { isExpired } from '../utils/ttl';
 import { JSONStorage } from '../storage/json-storage';
+import { MySQLStorage } from '../storage/mysql-storage';
 import { DataModel } from '../models/data-model';
 import { EventEmitter } from 'events';
 
-export class Collection extends EventEmitter {
-    private db: Database.Database;
-    private table: string;
-    private jsonStorage: JSONStorage;
+type StorageType = 'sqlite' | 'json' | 'mysql';
 
-    constructor(db: Database.Database, table: string, jsonFilePath: string, backupPath: string, encryptionKey: string) {
+export class Collection extends EventEmitter {
+    private db?: Database.Database;
+    private table: string;
+    private jsonStorage?: JSONStorage;
+    private mysqlStorage?: MySQLStorage;
+    private storageType: StorageType;
+
+    constructor(storageType: StorageType, table: string, config: any) {
         super();
-        this.db = db;
         this.table = table;
-        this.jsonStorage = new JSONStorage(jsonFilePath, backupPath, encryptionKey);
-        this.setup();
+        this.storageType = storageType;
+        if (storageType === 'sqlite') {
+            this.db = new Database(config.dbPath);
+            this.setupSQLite();
+        } else if (storageType === 'json') {
+            this.jsonStorage = new JSONStorage(config.jsonFilePath, config.backupPath, config.encryptionKey);
+        } else if (storageType === 'mysql') {
+            this.mysqlStorage = new MySQLStorage(config.mysqlConfig, table);
+        }
     }
 
-    private setup() {
-        this.db.prepare(`
+    private setupSQLite() {
+        this.db!.prepare(`
             CREATE TABLE IF NOT EXISTS ${this.table} (
                 id TEXT PRIMARY KEY,
                 value TEXT,
@@ -30,114 +41,159 @@ export class Collection extends EventEmitter {
         `).run();
     }
 
-    public set(key: string, value: any, ttl?: number): void {
+    public async set(key: string, value: any, ttl?: number): Promise<void> {
         const transformedValue = transformValue(value);
         const type = determineType(value);
         const expireAt = ttl ? Date.now() + ttl : null;
-        this.db.prepare(`
-            INSERT INTO ${this.table} (id, value, type, ttl)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET value = excluded.value, type = excluded.type, ttl = excluded.ttl
-        `).run(key, transformedValue, type, expireAt);
-        this.jsonStorage.set(key, { value: transformedValue, type, ttl: expireAt });
+        if (this.storageType === 'sqlite') {
+            this.db!.prepare(`
+                INSERT INTO ${this.table} (id, value, type, ttl)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET value = excluded.value, type = excluded.type, ttl = excluded.ttl
+            `).run(key, transformedValue, type, expireAt);
+        } else if (this.storageType === 'json') {
+            this.jsonStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
+        } else if (this.storageType === 'mysql') {
+            await this.mysqlStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
+        }
         this.emit('set', { key, value });
     }
 
-    public get<T>(key: string): T | null {
-        const row = this.db.prepare(`SELECT value, type, ttl FROM ${this.table} WHERE id = ?`).get(key);
-        if (row) {
-            if (isExpired(row.ttl)) {
-                this.delete(key);
+    public async get<T>(key: string): Promise<T | null> {
+        if (this.storageType === 'sqlite') {
+            const row = this.db!.prepare(`SELECT value, type, ttl FROM ${this.table} WHERE id = ?`).get(key);
+            if (row) {
+                if (isExpired(row.ttl)) {
+                    await this.delete(key);
+                    return null;
+                }
+                return parseValue(row.value) as T;
+            }
+        } else if (this.storageType === 'json') {
+            const jsonData = this.jsonStorage!.get<T>(key);
+            if (jsonData && isExpired(jsonData.ttl)) {
+                await this.delete(key);
                 return null;
             }
-            return parseValue(row.value) as T;
+            return jsonData ? jsonData.value : null;
+        } else if (this.storageType === 'mysql') {
+            const row = await this.mysqlStorage!.get<T>(key);
+            if (row && isExpired(row.ttl)) {
+                await this.delete(key);
+                return null;
+            }
+            return row ? (parseValue(row.value) as T) : null;
         }
-        const jsonData = this.jsonStorage.get<T>(key);
-        if (jsonData && isExpired(jsonData.ttl)) {
-            this.delete(key);
-            return null;
-        }
-        return jsonData ? jsonData.value : null;
+        return null;
     }
 
-    public delete(key: string): void {
-        this.db.prepare(`DELETE FROM ${this.table} WHERE id = ?`).run(key);
-        this.jsonStorage.delete(key);
+    public async delete(key: string): Promise<void> {
+        if (this.storageType === 'sqlite') {
+            this.db!.prepare(`DELETE FROM ${this.table} WHERE id = ?`).run(key);
+        } else if (this.storageType === 'json') {
+            this.jsonStorage!.delete(key);
+        } else if (this.storageType === 'mysql') {
+            await this.mysqlStorage!.delete(key);
+        }
         this.emit('delete', { key });
     }
 
-    public clear(): void {
-        this.db.prepare(`DELETE FROM ${this.table}`).run();
-        this.jsonStorage.clear();
+    public async clear(): Promise<void> {
+        if (this.storageType === 'sqlite') {
+            this.db!.prepare(`DELETE FROM ${this.table}`).run();
+        } else if (this.storageType === 'json') {
+            this.jsonStorage!.clear();
+        } else if (this.storageType === 'mysql') {
+            await this.mysqlStorage!.clear();
+        }
         this.emit('clear');
     }
 
-    public has(key: string): boolean {
-        const row = this.db.prepare(`SELECT 1 FROM ${this.table} WHERE id = ?`).get(key);
-        return !!row || this.jsonStorage.has(key);
+    public async has(key: string): Promise<boolean> {
+        if (this.storageType === 'sqlite') {
+            const row = this.db!.prepare(`SELECT 1 FROM ${this.table} WHERE id = ?`).get(key);
+            return !!row;
+        } else if (this.storageType === 'json') {
+            return this.jsonStorage!.has(key);
+        } else if (this.storageType === 'mysql') {
+            return await this.mysqlStorage!.has(key);
+        }
+        return false;
     }
 
-    public all(): DataModel[] {
-        const rows = this.db.prepare(`SELECT * FROM ${this.table}`).all();
-        const jsonRows = this.jsonStorage.all();
-        const parsedRows = rows.map(row => ({ id: row.id, value: parseValue(row.value), type: row.type, ttl: row.ttl }));
-        const combinedRows = [...parsedRows, ...Object.entries(jsonRows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))];
-        return combinedRows.filter(row => !isExpired(row.ttl));
+    public async all(): Promise<DataModel[]> {
+        if (this.storageType === 'sqlite') {
+            const rows = this.db!.prepare(`SELECT * FROM ${this.table}`).all();
+            return rows.map(row => ({ id: row.id, value: parseValue(row.value), type: row.type, ttl: row.ttl }))
+                       .filter(row => !isExpired(row.ttl));
+        } else if (this.storageType === 'json') {
+            const rows = this.jsonStorage!.all();
+            return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
+                                         .filter(row => !isExpired(row.ttl));
+        } else if (this.storageType === 'mysql') {
+            const rows = await this.mysqlStorage!.all();
+            return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
+                                         .filter(row => !isExpired(row.ttl));
+        }
+        return [];
     }
 
-    public push(key: string, value: any): void {
-        const data = this.get<any[]>(key) || [];
+    public async push(key: string, value: any): Promise<void> {
+        const data = await this.get<any[]>(key) || [];
         if (!Array.isArray(data)) {
             throw new Error(`Data at key ${key} is not an array`);
         }
         data.push(value);
-        this.set(key, data);
+        await this.set(key, data);
     }
 
-    public fetch(filter: (data: DataModel) => boolean): DataModel[] {
-        return this.all().filter(filter);
+    public async fetch(filter: (data: DataModel) => boolean): Promise<DataModel[]> {
+        const allData = await this.all();
+        return allData.filter(filter);
     }
 
-    public update(key: string, updates: Record<string, any>): void {
-        const data = this.get<any>(key);
+    public async update(key: string, updates: Record<string, any>): Promise<void> {
+        const data = await this.get<any>(key);
         if (!data || typeof data !== 'object') {
             throw new Error(`Data at key ${key} is not an object`);
         }
         const updatedData = { ...data, ...updates };
-        this.set(key, updatedData);
+        await this.set(key, updatedData);
     }
 
-    public increment(key: string, amount: number = 1): void {
-        let data = this.get<number>(key);
+    public async increment(key: string, amount: number = 1): Promise<void> {
+        let data = await this.get<number>(key);
         if (typeof data !== 'number') {
             data = 0;
         }
         data += amount;
-        this.set(key, data);
+        await this.set(key, data);
     }
 
-    public decrement(key: string, amount: number = 1): void {
-        let data = this.get<number>(key);
+    public async decrement(key: string, amount: number = 1): Promise<void> {
+        let data = await this.get<number>(key);
         if (typeof data !== 'number') {
             data = 0;
         }
         data -= amount;
-        this.set(key, data);
+        await this.set(key, data);
     }
 
-    public batchSet(entries: Record<string, any>): void {
+    public async batchSet(entries: Record<string, any>): Promise<void> {
         for (const key in entries) {
-            this.set(key, entries[key]);
+            await this.set(key, entries[key]);
         }
     }
 
-    public batchDelete(keys: string[]): void {
+    public async batchDelete(keys: string[]): Promise<void> {
         for (const key of keys) {
-            this.delete(key);
+            await this.delete(key);
         }
     }
 
-    public restore(): void {
-        this.jsonStorage.restore();
+    public async restore(): Promise<void> {
+        if (this.storageType === 'json') {
+            this.jsonStorage!.restore();
+        }
     }
 }
