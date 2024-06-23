@@ -1,86 +1,97 @@
-import Database from 'better-sqlite3';
 import { Collection } from './collections/collection';
 import { DataModel } from './models/data-model';
 
+type StorageType = 'sqlite' | 'json' | 'mysql';
+
+interface MyQuickDBConfig {
+    dbPath?: string;
+    jsonFilePath?: string;
+    backupPath?: string;
+    encryptionKey?: string;
+    mysqlConfig?: any;
+}
+
 export class MyQuickDB {
-    private db: Database.Database;
+    private storageType: StorageType;
+    private config: MyQuickDBConfig;
     private collections: Map<string, Collection>;
 
-    constructor(path: string) {
-        this.db = new Database(path);
+    constructor(storageType: StorageType, config: MyQuickDBConfig) {
+        this.storageType = storageType;
+        this.config = config;
         this.collections = new Map();
     }
 
     private getCollection(table: string): Collection {
         if (!this.collections.has(table)) {
-            const collection = new Collection(this.db, table, `${table}.json`);
+            const collection = new Collection(this.storageType, table, this.config);
             this.collections.set(table, collection);
         }
         return this.collections.get(table)!;
     }
 
-    public set(table: string, key: string, value: any, ttl?: number): void {
+    public async set(table: string, key: string, value: any, ttl?: number): Promise<void> {
         const collection = this.getCollection(table);
-        collection.set(key, value, ttl);
+        await collection.set(key, value, ttl);
     }
 
-    public get<T>(table: string, key: string): T | null {
+    public async get<T>(table: string, key: string): Promise<T | null> {
         const collection = this.getCollection(table);
-        return collection.get<T>(key);
+        return await collection.get<T>(key);
     }
 
-    public delete(table: string, key: string): void {
+    public async delete(table: string, key: string): Promise<void> {
         const collection = this.getCollection(table);
-        collection.delete(key);
+        await collection.delete(key);
     }
 
-    public clear(table: string): void {
+    public async clear(table: string): Promise<void> {
         const collection = this.getCollection(table);
-        collection.clear();
+        await collection.clear();
     }
 
-    public has(table: string, key: string): boolean {
+    public async has(table: string, key: string): Promise<boolean> {
         const collection = this.getCollection(table);
-        return collection.has(key);
+        return await collection.has(key);
     }
 
-    public all(table: string): DataModel[] {
+    public async all(table: string): Promise<DataModel[]> {
         const collection = this.getCollection(table);
-        return collection.all();
+        return await collection.all();
     }
 
-    public push(table: string, key: string, value: any): void {
+    public async push(table: string, key: string, value: any): Promise<void> {
         const collection = this.getCollection(table);
-        collection.push(key, value);
+        await collection.push(key, value);
     }
 
-    public fetch(table: string, filter: (data: DataModel) => boolean): DataModel[] {
+    public async fetch(table: string, filter: (data: DataModel) => boolean): Promise<DataModel[]> {
         const collection = this.getCollection(table);
-        return collection.fetch(filter);
+        return await collection.fetch(filter);
     }
 
-    public update(table: string, key: string, updates: Record<string, any>): void {
+    public async update(table: string, key: string, updates: Record<string, any>): Promise<void> {
         const collection = this.getCollection(table);
-        collection.update(key, updates);
+        await collection.update(key, updates);
     }
 
-    public increment(table: string, key: string, amount: number = 1): void {
+    public async increment(table: string, key: string, amount: number = 1): Promise<void> {
         const collection = this.getCollection(table);
-        collection.increment(key, amount);
+        await collection.increment(key, amount);
     }
 
-    public decrement(table: string, key: string, amount: number = 1): void {
+    public async decrement(table: string, key: string, amount: number = 1): Promise<void> {
         const collection = this.getCollection(table);
-        collection.decrement(key, amount);
+        await collection.decrement(key, amount);
     }
 
-    public batchSet(table: string, entries: Record<string, any>): void {
+    public async batchSet(table: string, entries: Record<string, any>): Promise<void> {
         const collection = this.getCollection(table);
-        collection.batchSet(entries);
+        await collection.batchSet(entries);
     }
 
-    public batchDelete(table: string, keys: string[]): void {
+    public async batchDelete(table: string, keys: string[]): Promise<void> {
         const collection = this.getCollection(table);
-        collection.batchDelete(keys);
+        await collection.batchDelete(keys);
     }
 }
