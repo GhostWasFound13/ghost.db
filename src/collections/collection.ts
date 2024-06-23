@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { transformValue, determineType } from '../utils/transform';
 import { parseValue } from '../utils/parse';
 import { JSONStorage } from '../storage/json-storage';
+import { DataModel } from '../models/data-model';
 
 export class Collection {
     private db: Database.Database;
@@ -65,5 +66,18 @@ export class Collection {
         const parsedRows = rows.map(row => ({ id: row.id, value: parseValue(row.value), type: row.type }));
         const combinedRows = [...parsedRows, ...Object.entries(jsonRows).map(([id, { value, type }]) => ({ id, value: parseValue(value), type }))];
         return combinedRows;
+    }
+
+    public push(key: string, value: any): void {
+        const data = this.get<any[]>(key) || [];
+        if (!Array.isArray(data)) {
+            throw new Error(`Data at key ${key} is not an array`);
+        }
+        data.push(value);
+        this.set(key, data);
+    }
+
+    public fetch(filter: (data: DataModel) => boolean): DataModel[] {
+        return this.all().filter(filter);
     }
 }
