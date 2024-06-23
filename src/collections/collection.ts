@@ -5,16 +5,22 @@ import { validateKey, validateValue } from '../utils/validate';
 import { readJSONFile, writeJSONFile } from '../utils/file-operations';
 import { encrypt, decrypt } from '../utils/encryption';
 import { JSONStorage } from '../storage/json-storage';
-import { MySQLStorage } from '../storage/mysql-storage';
+import { transformValue, determineType } from '../utils/transform';
+import { parseValue } from '../utils/parse';
+import { isExpired } from '../utils/ttl';
+import { validateKey, validateValue } from '../utils/validate';
+import { DataModel } from '../models/data-model';
+import { EventEmitter } from 'events';
 import { SQLiteStorage } from '../storage/sqlite-storage';
+import { JSONStorage } from '../storage/json-storage';
+import { MySQLStorage } from '../storage/mysql-storage';
 import { YMLStorage } from '../storage/yml-storage';
 import { MongoDBStorage } from '../storage/mongodb-storage';
 import { PostgreSQLStorage } from '../storage/postgresql-storage';
 import { CacheStorage } from '../storage/cache-storage';
-import { DataModel } from '../models/data-model';
-import { EventEmitter } from 'events';
+import { CassandraDriver } from '../storage/cassandra-driver';
 
-type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb' | 'postgresql' | 'cache';
+type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb' | 'postgresql' | 'cache' | 'cassandra';
 
 export class Collection extends EventEmitter {
     private sqliteStorage?: SQLiteStorage;
@@ -24,6 +30,7 @@ export class Collection extends EventEmitter {
     private mongodbStorage?: MongoDBStorage;
     private postgresqlStorage?: PostgreSQLStorage;
     private cacheStorage?: CacheStorage;
+    private cassandraDriver?: CassandraDriver;
     private storageType: StorageType;
     private encryptionKey?: string;
 
@@ -45,24 +52,32 @@ export class Collection extends EventEmitter {
             this.postgresqlStorage = new PostgreSQLStorage(config.postgresConfig, table);
         } else if (storageType === 'cache') {
             this.cacheStorage = new CacheStorage();
+        } else if (storageType === 'cassandra') {
+            this.cassandraDriver = new CassandraDriver(config.contactPoints, config.keyspace, config.username, config.password, table);
+        }
+    }
+
+    public async connect(): Promise<void> {
+        if (this.cassandraDriver) {
+            await this.cassandraDriver.connect();
+        }
+    }
+
+    public async disconnect(): Promise<void> {
+        if (this.cassandraDriver) {
+            await this.cassandraDriver.disconnect();
         }
     }
 
     public async set(key: string, value: any, ttl?: number): Promise<void> {
-        if (!validateKey(key)) {
-            throw new Error('Invalid key');
-        }
-        if (!validateValue(value)) {
-            throw new Error('Invalid value');
-        }
-        const type = determineType(value);
-        const transformedValue = transformValue(value);
-        const storedValue = this.encryptionKey ? encrypt(transformedValue, this.encryptionKey) : transformedValue;
+        validateKey(key);
+        validateValue(value);
         const dataModel: DataModel = {
             key,
-            value: storedValue,
-            type,
-            ttl: ttl ? Date.now() + ttl : null,
+            value: transformValue(value),
+            type: determineType(value),
+            ttl: ttl || null,
+            storageType: this.storageType
         };
 
         if (this.sqliteStorage) {
@@ -79,49 +94,33 @@ export class Collection extends EventEmitter {
             await this.postgresqlStorage.set(key, dataModel);
         } else if (this.cacheStorage) {
             this.cacheStorage.set(key, dataModel);
+        } else if (this.cassandraDriver) {
+            await this.cassandraDriver.set(key, dataModel);
         }
     }
 
     public async get<T>(key: string): Promise<T | null> {
-        if (!validateKey(key)) {
-            throw new Error('Invalid key');
-        }
-
-        let storedData: DataModel | null = null;
         if (this.sqliteStorage) {
-            storedData = await this.sqliteStorage.get(key);
+            return this.sqliteStorage.get<T>(key);
         } else if (this.jsonStorage) {
-            storedData = await this.jsonStorage.get(key);
+            return this.jsonStorage.get<T>(key);
         } else if (this.mysqlStorage) {
-            storedData = await this.mysqlStorage.get(key);
+            return this.mysqlStorage.get<T>(key);
         } else if (this.ymlStorage) {
-            storedData = await this.ymlStorage.get(key);
+            return this.ymlStorage.get<T>(key);
         } else if (this.mongodbStorage) {
-            storedData = await this.mongodbStorage.get(key);
+            return this.mongodbStorage.get<T>(key);
         } else if (this.postgresqlStorage) {
-            storedData = await this.postgresqlStorage.get(key);
+            return this.postgresqlStorage.get<T>(key);
         } else if (this.cacheStorage) {
-            storedData = this.cacheStorage.get(key);
+            return this.cacheStorage.get<T>(key);
+        } else if (this.cassandraDriver) {
+            return this.cassandraDriver.get<T>(key);
         }
-
-        if (!storedData) {
-            return null;
-        }
-
-        if (isExpired(storedData.ttl)) {
-            await this.delete(key);
-            return null;
-        }
-
-        const decryptedValue = this.encryptionKey ? decrypt(storedData.value, this.encryptionKey) : storedData.value;
-        return parseValue(decryptedValue, storedData.type) as T;
+        return null;
     }
 
     public async delete(key: string): Promise<void> {
-        if (!validateKey(key)) {
-            throw new Error('Invalid key');
-        }
-
         if (this.sqliteStorage) {
             await this.sqliteStorage.delete(key);
         } else if (this.jsonStorage) {
@@ -136,6 +135,8 @@ export class Collection extends EventEmitter {
             await this.postgresqlStorage.delete(key);
         } else if (this.cacheStorage) {
             this.cacheStorage.delete(key);
+        } else if (this.cassandraDriver) {
+            await this.cassandraDriver.delete(key);
         }
     }
 
@@ -154,50 +155,50 @@ export class Collection extends EventEmitter {
             await this.postgresqlStorage.clear();
         } else if (this.cacheStorage) {
             this.cacheStorage.clear();
+        } else if (this.cassandraDriver) {
+            await this.cassandraDriver.clear();
         }
     }
 
     public async has(key: string): Promise<boolean> {
-        if (!validateKey(key)) {
-            throw new Error('Invalid key');
-        }
-
         if (this.sqliteStorage) {
-            return await this.sqliteStorage.has(key);
+            return this.sqliteStorage.has(key);
         } else if (this.jsonStorage) {
-            return await this.jsonStorage.has(key);
+            return this.jsonStorage.has(key);
         } else if (this.mysqlStorage) {
-            return await this.mysqlStorage.has(key);
+            return this.mysqlStorage.has(key);
         } else if (this.ymlStorage) {
-            return await this.ymlStorage.has(key);
+            return this.ymlStorage.has(key);
         } else if (this.mongodbStorage) {
-            return await this.mongodbStorage.has(key);
+            return this.mongodbStorage.has(key);
         } else if (this.postgresqlStorage) {
-            return await this.postgresqlStorage.has(key);
+            return this.postgresqlStorage.has(key);
         } else if (this.cacheStorage) {
             return this.cacheStorage.has(key);
+        } else if (this.cassandraDriver) {
+            return this.cassandraDriver.has(key);
         }
-
         return false;
     }
 
     public async all(): Promise<DataModel[]> {
         if (this.sqliteStorage) {
-            return await this.sqliteStorage.all();
+            return this.sqliteStorage.all();
         } else if (this.jsonStorage) {
-            return await this.jsonStorage.all();
+            return this.jsonStorage.all();
         } else if (this.mysqlStorage) {
-            return await this.mysqlStorage.all();
+            return this.mysqlStorage.all();
         } else if (this.ymlStorage) {
-            return await this.ymlStorage.all();
+            return this.ymlStorage.all();
         } else if (this.mongodbStorage) {
-            return await this.mongodbStorage.all();
+            return this.mongodbStorage.all();
         } else if (this.postgresqlStorage) {
-            return await this.postgresqlStorage.all();
+            return this.postgresqlStorage.all();
         } else if (this.cacheStorage) {
             return this.cacheStorage.all();
+        } else if (this.cassandraDriver) {
+            return this.cassandraDriver.all();
         }
-
         return [];
     }
 
