@@ -11,11 +11,11 @@ export class Collection extends EventEmitter {
     private table: string;
     private jsonStorage: JSONStorage;
 
-    constructor(db: Database.Database, table: string, jsonFilePath: string) {
+    constructor(db: Database.Database, table: string, jsonFilePath: string, backupPath: string, encryptionKey: string) {
         super();
         this.db = db;
         this.table = table;
-        this.jsonStorage = new JSONStorage(jsonFilePath);
+        this.jsonStorage = new JSONStorage(jsonFilePath, backupPath, encryptionKey);
         this.setup();
     }
 
@@ -135,5 +135,9 @@ export class Collection extends EventEmitter {
         for (const key of keys) {
             this.delete(key);
         }
+    }
+
+    public restore(): void {
+        this.jsonStorage.restore();
     }
 }
