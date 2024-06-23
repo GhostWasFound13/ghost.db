@@ -4,20 +4,23 @@ import { isExpired } from '../utils/ttl';
 import { JSONStorage } from '../storage/json-storage';
 import { MySQLStorage } from '../storage/mysql-storage';
 import { SQLiteStorage } from '../storage/sqlite-storage';
+import { YMLStorage } from '../storage/yml-storage';
+import { MongoDBStorage } from '../storage/mongodb-storage';
 import { DataModel } from '../models/data-model';
 import { EventEmitter } from 'events';
 
-type StorageType = 'sqlite' | 'json' | 'mysql';
+type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb';
 
 export class Collection extends EventEmitter {
     private sqliteStorage?: SQLiteStorage;
     private jsonStorage?: JSONStorage;
     private mysqlStorage?: MySQLStorage;
+    private ymlStorage?: YMLStorage;
+    private mongodbStorage?: MongoDBStorage;
     private storageType: StorageType;
 
     constructor(storageType: StorageType, table: string, config: any) {
         super();
-        this.table = table;
         this.storageType = storageType;
         if (storageType === 'sqlite') {
             this.sqliteStorage = new SQLiteStorage(config.dbPath, table);
@@ -25,6 +28,10 @@ export class Collection extends EventEmitter {
             this.jsonStorage = new JSONStorage(config.jsonFilePath, config.backupPath, config.encryptionKey);
         } else if (storageType === 'mysql') {
             this.mysqlStorage = new MySQLStorage(config.mysqlConfig, table);
+        } else if (storageType === 'yml') {
+            this.ymlStorage = new YMLStorage(config.ymlFilePath);
+        } else if (storageType === 'mongodb') {
+            this.mongodbStorage = new MongoDBStorage(config.mongoUri, config.dbName, table);
         }
     }
 
