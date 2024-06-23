@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { Collection } from './collections/collection';
+import { DataModel } from './models/data-model';
 
 export class MyQuickDB {
     private db: Database.Database;
@@ -46,5 +47,15 @@ export class MyQuickDB {
     public all(table: string): DataModel[] {
         const collection = this.getCollection(table);
         return collection.all();
+    }
+
+    public push(table: string, key: string, value: any): void {
+        const collection = this.getCollection(table);
+        collection.push(key, value);
+    }
+
+    public fetch(table: string, filter: (data: DataModel) => boolean): DataModel[] {
+        const collection = this.getCollection(table);
+        return collection.fetch(filter);
     }
 }
