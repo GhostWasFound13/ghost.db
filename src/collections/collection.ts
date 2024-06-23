@@ -170,7 +170,24 @@ export class Collection extends EventEmitter {
             await this.delete(key);
         }
     }
+  public async shift(key: string): Promise<any> {
+        const data = await this.get<any[]>(key) || [];
+        if (!Array.isArray(data)) {
+            throw new Error(`Data at key ${key} is not an array`);
+        }
+        const shiftedValue = data.shift();
+        await this.set(key, data);
+        return shiftedValue;
+    }
 
+    public async unshift(key: string, value: any): Promise<void> {
+        const data = await this.get<any[]>(key) || [];
+        if (!Array.isArray(data)) {
+            throw new Error(`Data at key ${key} is not an array`);
+        }
+        data.unshift(value);
+        await this.set(key, data);
+    }
     public async restore(): Promise<void> {
         if (this.storageType === 'json') {
             this.jsonStorage!.restore();
