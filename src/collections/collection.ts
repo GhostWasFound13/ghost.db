@@ -1,17 +1,16 @@
-import Database from 'better-sqlite3';
 import { transformValue, determineType } from '../utils/transform';
 import { parseValue } from '../utils/parse';
 import { isExpired } from '../utils/ttl';
 import { JSONStorage } from '../storage/json-storage';
 import { MySQLStorage } from '../storage/mysql-storage';
+import { SQLiteStorage } from '../storage/sqlite-storage';
 import { DataModel } from '../models/data-model';
 import { EventEmitter } from 'events';
 
 type StorageType = 'sqlite' | 'json' | 'mysql';
 
 export class Collection extends EventEmitter {
-    private db?: Database.Database;
-    private table: string;
+    private sqliteStorage?: SQLiteStorage;
     private jsonStorage?: JSONStorage;
     private mysqlStorage?: MySQLStorage;
     private storageType: StorageType;
@@ -21,8 +20,7 @@ export class Collection extends EventEmitter {
         this.table = table;
         this.storageType = storageType;
         if (storageType === 'sqlite') {
-            this.db = new Database(config.dbPath);
-            this.setupSQLite();
+            this.sqliteStorage = new SQLiteStorage(config.dbPath, table);
         } else if (storageType === 'json') {
             this.jsonStorage = new JSONStorage(config.jsonFilePath, config.backupPath, config.encryptionKey);
         } else if (storageType === 'mysql') {
@@ -30,27 +28,12 @@ export class Collection extends EventEmitter {
         }
     }
 
-    private setupSQLite() {
-        this.db!.prepare(`
-            CREATE TABLE IF NOT EXISTS ${this.table} (
-                id TEXT PRIMARY KEY,
-                value TEXT,
-                type TEXT,
-                ttl INTEGER
-            )
-        `).run();
-    }
-
     public async set(key: string, value: any, ttl?: number): Promise<void> {
         const transformedValue = transformValue(value);
         const type = determineType(value);
         const expireAt = ttl ? Date.now() + ttl : null;
         if (this.storageType === 'sqlite') {
-            this.db!.prepare(`
-                INSERT INTO ${this.table} (id, value, type, ttl)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET value = excluded.value, type = excluded.type, ttl = excluded.ttl
-            `).run(key, transformedValue, type, expireAt);
+            this.sqliteStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
         } else if (this.storageType === 'json') {
             this.jsonStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
         } else if (this.storageType === 'mysql') {
@@ -61,14 +44,12 @@ export class Collection extends EventEmitter {
 
     public async get<T>(key: string): Promise<T | null> {
         if (this.storageType === 'sqlite') {
-            const row = this.db!.prepare(`SELECT value, type, ttl FROM ${this.table} WHERE id = ?`).get(key);
-            if (row) {
-                if (isExpired(row.ttl)) {
-                    await this.delete(key);
-                    return null;
-                }
-                return parseValue(row.value) as T;
+            const row = this.sqliteStorage!.get(key);
+            if (row && isExpired(row.ttl)) {
+                await this.delete(key);
+                return null;
             }
+            return row ? (parseValue(row.value) as T) : null;
         } else if (this.storageType === 'json') {
             const jsonData = this.jsonStorage!.get<T>(key);
             if (jsonData && isExpired(jsonData.ttl)) {
@@ -89,7 +70,7 @@ export class Collection extends EventEmitter {
 
     public async delete(key: string): Promise<void> {
         if (this.storageType === 'sqlite') {
-            this.db!.prepare(`DELETE FROM ${this.table} WHERE id = ?`).run(key);
+            this.sqliteStorage!.delete(key);
         } else if (this.storageType === 'json') {
             this.jsonStorage!.delete(key);
         } else if (this.storageType === 'mysql') {
@@ -100,7 +81,7 @@ export class Collection extends EventEmitter {
 
     public async clear(): Promise<void> {
         if (this.storageType === 'sqlite') {
-            this.db!.prepare(`DELETE FROM ${this.table}`).run();
+            this.sqliteStorage!.clear();
         } else if (this.storageType === 'json') {
             this.jsonStorage!.clear();
         } else if (this.storageType === 'mysql') {
@@ -111,8 +92,7 @@ export class Collection extends EventEmitter {
 
     public async has(key: string): Promise<boolean> {
         if (this.storageType === 'sqlite') {
-            const row = this.db!.prepare(`SELECT 1 FROM ${this.table} WHERE id = ?`).get(key);
-            return !!row;
+            return this.sqliteStorage!.has(key);
         } else if (this.storageType === 'json') {
             return this.jsonStorage!.has(key);
         } else if (this.storageType === 'mysql') {
@@ -123,9 +103,9 @@ export class Collection extends EventEmitter {
 
     public async all(): Promise<DataModel[]> {
         if (this.storageType === 'sqlite') {
-            const rows = this.db!.prepare(`SELECT * FROM ${this.table}`).all();
-            return rows.map(row => ({ id: row.id, value: parseValue(row.value), type: row.type, ttl: row.ttl }))
-                       .filter(row => !isExpired(row.ttl));
+            const rows = this.sqliteStorage!.all();
+            return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
+                                         .filter(row => !isExpired(row.ttl));
         } else if (this.storageType === 'json') {
             const rows = this.jsonStorage!.all();
             return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
