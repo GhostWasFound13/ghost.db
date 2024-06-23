@@ -7,8 +7,7 @@ for this package v1 will be advanced than quick.db v9 soon
 
 ghost.db feature next
 -
-- [not done] Driver System
-- [not done] Storage system
-- [not done ] collections System
+- [45/100] Storage system (sql, sqlite, json, mongodb, )
+- [x] collections System
 - [x] Utils
 - [not done] More functions
