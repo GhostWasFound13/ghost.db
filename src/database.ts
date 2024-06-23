@@ -1,7 +1,7 @@
 import { Collection } from './collections/collection';
 import { DataModel } from './models/data-model';
 
-type StorageType = 'sqlite' | 'json' | 'mysql';
+type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb';
 
 interface MyQuickDBConfig {
     dbPath?: string;
@@ -9,6 +9,9 @@ interface MyQuickDBConfig {
     backupPath?: string;
     encryptionKey?: string;
     mysqlConfig?: any;
+    ymlFilePath?: string;
+    mongoUri?: string;
+    dbName?: string;
 }
 
 export class MyQuickDB {
@@ -24,24 +27,24 @@ export class MyQuickDB {
         this.connected = false;
     }
 
-    public connect(): void {
+    public async connect(): Promise<void> {
         if (this.connected) {
             throw new Error("Database is already connected");
         }
-        // Perform any necessary connection logic for the storage type
-        if (this.storageType === 'mysql') {
-            // Connect to MySQL if needed
+        if (this.storageType === 'mongodb') {
+            const collection = new Collection(this.storageType, 'temp', this.config);
+            await (collection as any).mongodbStorage.connect();
         }
         this.connected = true;
     }
 
-    public disconnect(): void {
+    public async disconnect(): Promise<void> {
         if (!this.connected) {
             throw new Error("Database is not connected");
         }
-        // Perform any necessary disconnection logic for the storage type
-        if (this.storageType === 'mysql') {
-            // Disconnect from MySQL if needed
+        if (this.storageType === 'mongodb') {
+            const collection = new Collection(this.storageType, 'temp', this.config);
+            await (collection as any).mongodbStorage.disconnect();
         }
         this.collections.clear();
         this.connected = false;
