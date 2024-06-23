@@ -1,57 +1,57 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'fs';
+
+interface StoredData {
+    value: string;
+    type: string;
+    ttl: number | null;
+}
 
 export class JSONStorage {
     private filePath: string;
+    private data: Record<string, StoredData>;
 
     constructor(filePath: string) {
         this.filePath = filePath;
-        this.ensureFile();
+        this.data = this.loadData();
     }
 
-    private ensureFile() {
-        if (!fs.existsSync(this.filePath)) {
-            fs.writeFileSync(this.filePath, JSON.stringify({}));
+    private loadData(): Record<string, StoredData> {
+        if (fs.existsSync(this.filePath)) {
+            const rawData = fs.readFileSync(this.filePath, 'utf-8');
+            return JSON.parse(rawData);
         }
+        return {};
     }
 
-    private readData(): any {
-        this.ensureFile();
-        const data = fs.readFileSync(this.filePath, 'utf-8');
-        return JSON.parse(data);
+    private saveData(): void {
+        const rawData = JSON.stringify(this.data, null, 2);
+        fs.writeFileSync(this.filePath, rawData, 'utf-8');
     }
 
-    private writeData(data: any) {
-        fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2));
+    public set(key: string, value: StoredData): void {
+        this.data[key] = value;
+        this.saveData();
     }
 
-    public set(key: string, value: any): void {
-        const data = this.readData();
-        data[key] = value;
-        this.writeData(data);
-    }
-
-    public get<T>(key: string): T | null {
-        const data = this.readData();
-        return data[key] || null;
+    public get<T>(key: string): StoredData | null {
+        return this.data[key] || null;
     }
 
     public delete(key: string): void {
-        const data = this.readData();
-        delete data[key];
-        this.writeData(data);
+        delete this.data[key];
+        this.saveData();
     }
 
     public clear(): void {
-        this.writeData({});
+        this.data = {};
+        this.saveData();
     }
 
     public has(key: string): boolean {
-        const data = this.readData();
-        return key in data;
+        return key in this.data;
     }
 
-    public all(): any {
-        return this.readData();
+    public all(): Record<string, StoredData> {
+        return this.data;
     }
 }
