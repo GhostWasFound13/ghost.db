@@ -1,10 +1,9 @@
-export function transformValue(value: any): string {
-    if (typeof value === 'object') {
-        return JSON.stringify(value);
-    }
-    return String(value);
-}
+export const transformValue = (value: any): string => {
+    return JSON.stringify(value);
+};
 
-export function determineType(value: any): string {
+export const determineType = (value: any): string => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return 'array';
     return typeof value;
-}
+};
