@@ -15,14 +15,42 @@ export class MyQuickDB {
     private storageType: StorageType;
     private config: MyQuickDBConfig;
     private collections: Map<string, Collection>;
+    private connected: boolean;
 
     constructor(storageType: StorageType, config: MyQuickDBConfig) {
         this.storageType = storageType;
         this.config = config;
         this.collections = new Map();
+        this.connected = false;
+    }
+
+    public connect(): void {
+        if (this.connected) {
+            throw new Error("Database is already connected");
+        }
+        // Perform any necessary connection logic for the storage type
+        if (this.storageType === 'mysql') {
+            // Connect to MySQL if needed
+        }
+        this.connected = true;
+    }
+
+    public disconnect(): void {
+        if (!this.connected) {
+            throw new Error("Database is not connected");
+        }
+        // Perform any necessary disconnection logic for the storage type
+        if (this.storageType === 'mysql') {
+            // Disconnect from MySQL if needed
+        }
+        this.collections.clear();
+        this.connected = false;
     }
 
     private getCollection(table: string): Collection {
+        if (!this.connected) {
+            throw new Error("Database is not connected");
+        }
         if (!this.collections.has(table)) {
             const collection = new Collection(this.storageType, table, this.config);
             this.collections.set(table, collection);
@@ -63,6 +91,16 @@ export class MyQuickDB {
     public async push(table: string, key: string, value: any): Promise<void> {
         const collection = this.getCollection(table);
         await collection.push(key, value);
+    }
+
+    public async shift(table: string, key: string): Promise<any> {
+        const collection = this.getCollection(table);
+        return await collection.shift(key);
+    }
+
+    public async unshift(table: string, key: string, value: any): Promise<void> {
+        const collection = this.getCollection(table);
+        await collection.unshift(key, value);
     }
 
     public async fetch(table: string, filter: (data: DataModel) => boolean): Promise<DataModel[]> {
