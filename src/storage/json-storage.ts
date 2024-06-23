@@ -10,9 +10,9 @@ interface StoredData {
 
 export class JSONStorage {
     private filePath: string;
-    private data: Record<string, StoredData>;
     private backupPath: string;
     private encryptionKey: string;
+    private data: Record<string, StoredData>;
 
     constructor(filePath: string, backupPath: string, encryptionKey: string) {
         this.filePath = filePath;
