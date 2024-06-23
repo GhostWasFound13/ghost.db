@@ -9,10 +9,12 @@ import { MySQLStorage } from '../storage/mysql-storage';
 import { SQLiteStorage } from '../storage/sqlite-storage';
 import { YMLStorage } from '../storage/yml-storage';
 import { MongoDBStorage } from '../storage/mongodb-storage';
+import { PostgreSQLStorage } from '../storage/postgresql-storage';
+import { CacheStorage } from '../storage/cache-storage';
 import { DataModel } from '../models/data-model';
 import { EventEmitter } from 'events';
 
-type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb';
+type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb' | 'postgresql' | 'cache';
 
 export class Collection extends EventEmitter {
     private sqliteStorage?: SQLiteStorage;
@@ -20,6 +22,8 @@ export class Collection extends EventEmitter {
     private mysqlStorage?: MySQLStorage;
     private ymlStorage?: YMLStorage;
     private mongodbStorage?: MongoDBStorage;
+    private postgresqlStorage?: PostgreSQLStorage;
+    private cacheStorage?: CacheStorage;
     private storageType: StorageType;
     private encryptionKey?: string;
 
@@ -37,6 +41,10 @@ export class Collection extends EventEmitter {
             this.ymlStorage = new YMLStorage(config.ymlFilePath);
         } else if (storageType === 'mongodb') {
             this.mongodbStorage = new MongoDBStorage(config.mongoUri, config.dbName, table);
+        } else if (storageType === 'postgresql') {
+            this.postgresqlStorage = new PostgreSQLStorage(config.postgresConfig, table);
+        } else if (storageType === 'cache') {
+            this.cacheStorage = new CacheStorage();
         }
     }
 
@@ -67,6 +75,10 @@ export class Collection extends EventEmitter {
             await this.ymlStorage.set(key, dataModel);
         } else if (this.mongodbStorage) {
             await this.mongodbStorage.set(key, dataModel);
+        } else if (this.postgresqlStorage) {
+            await this.postgresqlStorage.set(key, dataModel);
+        } else if (this.cacheStorage) {
+            this.cacheStorage.set(key, dataModel);
         }
     }
 
@@ -86,6 +98,10 @@ export class Collection extends EventEmitter {
             storedData = await this.ymlStorage.get(key);
         } else if (this.mongodbStorage) {
             storedData = await this.mongodbStorage.get(key);
+        } else if (this.postgresqlStorage) {
+            storedData = await this.postgresqlStorage.get(key);
+        } else if (this.cacheStorage) {
+            storedData = this.cacheStorage.get(key);
         }
 
         if (!storedData) {
@@ -102,52 +118,86 @@ export class Collection extends EventEmitter {
     }
 
     public async delete(key: string): Promise<void> {
-        if (this.storageType === 'sqlite') {
-            this.sqliteStorage!.delete(key);
-        } else if (this.storageType === 'json') {
-            this.jsonStorage!.delete(key);
-        } else if (this.storageType === 'mysql') {
-            await this.mysqlStorage!.delete(key);
+        if (!validateKey(key)) {
+            throw new Error('Invalid key');
         }
-        this.emit('delete', { key });
+
+        if (this.sqliteStorage) {
+            await this.sqliteStorage.delete(key);
+        } else if (this.jsonStorage) {
+            await this.jsonStorage.delete(key);
+        } else if (this.mysqlStorage) {
+            await this.mysqlStorage.delete(key);
+        } else if (this.ymlStorage) {
+            await this.ymlStorage.delete(key);
+        } else if (this.mongodbStorage) {
+            await this.mongodbStorage.delete(key);
+        } else if (this.postgresqlStorage) {
+            await this.postgresqlStorage.delete(key);
+        } else if (this.cacheStorage) {
+            this.cacheStorage.delete(key);
+        }
     }
 
     public async clear(): Promise<void> {
-        if (this.storageType === 'sqlite') {
-            this.sqliteStorage!.clear();
-        } else if (this.storageType === 'json') {
-            this.jsonStorage!.clear();
-        } else if (this.storageType === 'mysql') {
-            await this.mysqlStorage!.clear();
+        if (this.sqliteStorage) {
+            await this.sqliteStorage.clear();
+        } else if (this.jsonStorage) {
+            await this.jsonStorage.clear();
+        } else if (this.mysqlStorage) {
+            await this.mysqlStorage.clear();
+        } else if (this.ymlStorage) {
+            await this.ymlStorage.clear();
+        } else if (this.mongodbStorage) {
+            await this.mongodbStorage.clear();
+        } else if (this.postgresqlStorage) {
+            await this.postgresqlStorage.clear();
+        } else if (this.cacheStorage) {
+            this.cacheStorage.clear();
         }
-        this.emit('clear');
     }
 
     public async has(key: string): Promise<boolean> {
-        if (this.storageType === 'sqlite') {
-            return this.sqliteStorage!.has(key);
-        } else if (this.storageType === 'json') {
-            return this.jsonStorage!.has(key);
-        } else if (this.storageType === 'mysql') {
-            return await this.mysqlStorage!.has(key);
+        if (!validateKey(key)) {
+            throw new Error('Invalid key');
         }
+
+        if (this.sqliteStorage) {
+            return await this.sqliteStorage.has(key);
+        } else if (this.jsonStorage) {
+            return await this.jsonStorage.has(key);
+        } else if (this.mysqlStorage) {
+            return await this.mysqlStorage.has(key);
+        } else if (this.ymlStorage) {
+            return await this.ymlStorage.has(key);
+        } else if (this.mongodbStorage) {
+            return await this.mongodbStorage.has(key);
+        } else if (this.postgresqlStorage) {
+            return await this.postgresqlStorage.has(key);
+        } else if (this.cacheStorage) {
+            return this.cacheStorage.has(key);
+        }
+
         return false;
     }
 
     public async all(): Promise<DataModel[]> {
-        if (this.storageType === 'sqlite') {
-            const rows = this.sqliteStorage!.all();
-            return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
-                                         .filter(row => !isExpired(row.ttl));
-        } else if (this.storageType === 'json') {
-            const rows = this.jsonStorage!.all();
-            return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
-                                         .filter(row => !isExpired(row.ttl));
-        } else if (this.storageType === 'mysql') {
-            const rows = await this.mysqlStorage!.all();
-            return Object.entries(rows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))
-                                         .filter(row => !isExpired(row.ttl));
+        if (this.sqliteStorage) {
+            return await this.sqliteStorage.all();
+        } else if (this.jsonStorage) {
+            return await this.jsonStorage.all();
+        } else if (this.mysqlStorage) {
+            return await this.mysqlStorage.all();
+        } else if (this.ymlStorage) {
+            return await this.ymlStorage.all();
+        } else if (this.mongodbStorage) {
+            return await this.mongodbStorage.all();
+        } else if (this.postgresqlStorage) {
+            return await this.postgresqlStorage.all();
+        } else if (this.cacheStorage) {
+            return this.cacheStorage.all();
         }
+
         return [];
     }
 
