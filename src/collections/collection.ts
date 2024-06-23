@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { transformValue, determineType } from '../utils/transform';
 import { parseValue } from '../utils/parse';
+import { isExpired } from '../utils/ttl';
 import { JSONStorage } from '../storage/json-storage';
 import { DataModel } from '../models/data-model';
 import { EventEmitter } from 'events';
@@ -45,14 +46,14 @@ export class Collection extends EventEmitter {
     public get<T>(key: string): T | null {
         const row = this.db.prepare(`SELECT value, type, ttl FROM ${this.table} WHERE id = ?`).get(key);
         if (row) {
-            if (row.ttl && Date.now() > row.ttl) {
+            if (isExpired(row.ttl)) {
                 this.delete(key);
                 return null;
             }
             return parseValue(row.value) as T;
         }
         const jsonData = this.jsonStorage.get<T>(key);
-        if (jsonData && jsonData.ttl && Date.now() > jsonData.ttl) {
+        if (jsonData && isExpired(jsonData.ttl)) {
             this.delete(key);
             return null;
         }
@@ -81,7 +82,7 @@ export class Collection extends EventEmitter {
         const jsonRows = this.jsonStorage.all();
         const parsedRows = rows.map(row => ({ id: row.id, value: parseValue(row.value), type: row.type, ttl: row.ttl }));
         const combinedRows = [...parsedRows, ...Object.entries(jsonRows).map(([id, { value, type, ttl }]) => ({ id, value: parseValue(value), type, ttl }))];
-        return combinedRows.filter(row => !row.ttl || Date.now() <= row.ttl);
+        return combinedRows.filter(row => !isExpired(row.ttl));
     }
 
     public push(key: string, value: any): void {
