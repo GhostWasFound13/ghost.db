@@ -1,7 +1,3 @@
-export function parseValue(value: any): any {
-    try {
-        return JSON.parse(value);
-    } catch {
-        return value;
-    }
-}
+export const parseValue = (value: string): any => {
+    return JSON.parse(value);
+};
