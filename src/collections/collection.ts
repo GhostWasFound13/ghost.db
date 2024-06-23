@@ -1,6 +1,9 @@
 import { transformValue, determineType } from '../utils/transform';
 import { parseValue } from '../utils/parse';
 import { isExpired } from '../utils/ttl';
+import { validateKey, validateValue } from '../utils/validate';
+import { readJSONFile, writeJSONFile } from '../utils/file-operations';
+import { encrypt, decrypt } from '../utils/encryption';
 import { JSONStorage } from '../storage/json-storage';
 import { MySQLStorage } from '../storage/mysql-storage';
 import { SQLiteStorage } from '../storage/sqlite-storage';
@@ -18,10 +21,12 @@ export class Collection extends EventEmitter {
     private ymlStorage?: YMLStorage;
     private mongodbStorage?: MongoDBStorage;
     private storageType: StorageType;
+    private encryptionKey?: string;
 
     constructor(storageType: StorageType, table: string, config: any) {
         super();
         this.storageType = storageType;
+        this.encryptionKey = config.encryptionKey;
         if (storageType === 'sqlite') {
             this.sqliteStorage = new SQLiteStorage(config.dbPath, table);
         } else if (storageType === 'json') {
@@ -36,43 +41,64 @@ export class Collection extends EventEmitter {
     }
 
     public async set(key: string, value: any, ttl?: number): Promise<void> {
-        const transformedValue = transformValue(value);
-        const type = determineType(value);
-        const expireAt = ttl ? Date.now() + ttl : null;
-        if (this.storageType === 'sqlite') {
-            this.sqliteStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
-        } else if (this.storageType === 'json') {
-            this.jsonStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
-        } else if (this.storageType === 'mysql') {
-            await this.mysqlStorage!.set(key, { value: transformedValue, type, ttl: expireAt });
+        if (!validateKey(key)) {
+            throw new Error('Invalid key');
         }
-        this.emit('set', { key, value });
+        if (!validateValue(value)) {
+            throw new Error('Invalid value');
+        }
+        const type = determineType(value);
+        const transformedValue = transformValue(value);
+        const storedValue = this.encryptionKey ? encrypt(transformedValue, this.encryptionKey) : transformedValue;
+        const dataModel: DataModel = {
+            key,
+            value: storedValue,
+            type,
+            ttl: ttl ? Date.now() + ttl : null,
+        };
+
+        if (this.sqliteStorage) {
+            await this.sqliteStorage.set(key, dataModel);
+        } else if (this.jsonStorage) {
+            await this.jsonStorage.set(key, dataModel);
+        } else if (this.mysqlStorage) {
+            await this.mysqlStorage.set(key, dataModel);
+        } else if (this.ymlStorage) {
+            await this.ymlStorage.set(key, dataModel);
+        } else if (this.mongodbStorage) {
+            await this.mongodbStorage.set(key, dataModel);
+        }
     }
 
     public async get<T>(key: string): Promise<T | null> {
-        if (this.storageType === 'sqlite') {
-            const row = this.sqliteStorage!.get(key);
-            if (row && isExpired(row.ttl)) {
-                await this.delete(key);
-                return null;
-            }
-            return row ? (parseValue(row.value) as T) : null;
-        } else if (this.storageType === 'json') {
-            const jsonData = this.jsonStorage!.get<T>(key);
-            if (jsonData && isExpired(jsonData.ttl)) {
-                await this.delete(key);
-                return null;
-            }
-            return jsonData ? jsonData.value : null;
-        } else if (this.storageType === 'mysql') {
-            const row = await this.mysqlStorage!.get<T>(key);
-            if (row && isExpired(row.ttl)) {
-                await this.delete(key);
-                return null;
-            }
-            return row ? (parseValue(row.value) as T) : null;
+        if (!validateKey(key)) {
+            throw new Error('Invalid key');
         }
-        return null;
+
+        let storedData: DataModel | null = null;
+        if (this.sqliteStorage) {
+            storedData = await this.sqliteStorage.get(key);
+        } else if (this.jsonStorage) {
+            storedData = await this.jsonStorage.get(key);
+        } else if (this.mysqlStorage) {
+            storedData = await this.mysqlStorage.get(key);
+        } else if (this.ymlStorage) {
+            storedData = await this.ymlStorage.get(key);
+        } else if (this.mongodbStorage) {
+            storedData = await this.mongodbStorage.get(key);
+        }
+
+        if (!storedData) {
+            return null;
+        }
+
+        if (isExpired(storedData.ttl)) {
+            await this.delete(key);
+            return null;
+        }
+
+        const decryptedValue = this.encryptionKey ? decrypt(storedData.value, this.encryptionKey) : storedData.value;
+        return parseValue(decryptedValue, storedData.type) as T;
     }
 
     public async delete(key: string): Promise<void> {
