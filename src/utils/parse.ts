@@ -1,8 +1,8 @@
 
 
-type Primitive = string | number | boolean | null | undefined | bigint | symbol;
+export type Primitive = string | number | boolean | null | undefined | bigint | symbol;
 
-interface ParseOptions {
+export interface ParseOptions {
   allowBigInt?: boolean;
   allowMaxSafeInteger?: boolean;
   fallbackType?: 'primitive' | 'object';
