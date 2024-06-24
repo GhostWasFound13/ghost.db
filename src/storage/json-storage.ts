@@ -1,7 +1,7 @@
 import fs from 'fs';
 import zlib from 'zlib';
 import crypto from 'crypto';
-
+import parseValue from '../utils/parse';
 interface StoredData {
     value: string;
     type: string;
@@ -50,7 +50,7 @@ export class JSONStorage {
             const encryptedData = fs.readFileSync(this.backupPath, 'utf-8');
             const compressedData = this.decryptData(encryptedData);
             const rawData = this.decompressData(compressedData);
-            this.data = JSON.parse(rawData);
+            this.data = parseValue(rawData);
             this.saveData();
         }
     }
