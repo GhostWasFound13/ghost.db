@@ -1,7 +1,7 @@
 import { Collection } from './collections/collection';
 import { DataModel } from './models/data-model';
 
-type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb';
+type StorageType = 'sqlite' | 'json' | 'mysql' | 'yml' | 'mongodb' | 'postgresql' | 'cassandra' | 'cache';
 
 interface MyQuickDBConfig {
     dbPath?: string;
@@ -12,6 +12,11 @@ interface MyQuickDBConfig {
     ymlFilePath?: string;
     mongoUri?: string;
     dbName?: string;
+    postgresConfig?: any;
+    contactPoints?: string[];
+    keyspace?: string;
+    username?: string;
+    password?: string;
 }
 
 export class MyQuickDB {
@@ -31,10 +36,17 @@ export class MyQuickDB {
         if (this.connected) {
             throw new Error("Database is already connected");
         }
+
+        const collection = new Collection(this.storageType, 'temp', this.config);
+
         if (this.storageType === 'mongodb') {
-            const collection = new Collection(this.storageType, 'temp', this.config);
             await (collection as any).mongodbStorage.connect();
+        } else if (this.storageType === 'postgresql') {
+            await (collection as any).postgresqlStorage.connect();
+        } else if (this.storageType === 'cassandra') {
+            await (collection as any).cassandraDriver.connect();
         }
+
         this.connected = true;
     }
 
@@ -42,10 +54,17 @@ export class MyQuickDB {
         if (!this.connected) {
             throw new Error("Database is not connected");
         }
+
+        const collection = new Collection(this.storageType, 'temp', this.config);
+
         if (this.storageType === 'mongodb') {
-            const collection = new Collection(this.storageType, 'temp', this.config);
             await (collection as any).mongodbStorage.disconnect();
+        } else if (this.storageType === 'postgresql') {
+            await (collection as any).postgresqlStorage.disconnect();
+        } else if (this.storageType === 'cassandra') {
+            await (collection as any).cassandraDriver.disconnect();
         }
+
         this.collections.clear();
         this.connected = false;
     }
