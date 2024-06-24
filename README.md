@@ -1,23 +1,24 @@
 
-# wait
+# nitro.db
 
-wait is a lightweight and versatile database management package for Node.js, written in TypeScript. It provides an easy-to-use interface for storing, retrieving, and managing data using various storage options.
+nitro.db is a lightweight and versatile database management package for Node.js, written in TypeScript. It provides an easy-to-use interface for storing, retrieving, and managing data using various storage options.
 
 ## Installation
 
-To install MyQuickDB, use npm:
+To install nitro
+db, use npm:
 
 ```bash
-npm install myquickdb
+npm install nitro.db
 ```
 
 ## Usage
 
 ```typescript
-import { MyQuickDB } from 'myquickdb';
+import { database } from 'nitro.db';
 
-// Initialize MyQuickDB with SQLite storage
-const db = new MyQuickDB('sqlite', 'my_database.db');
+// Initialize database with SQLite storage
+const db = new database('sqlite', /* you can changed to mongodb or other*/'my_database.db');
 
 // Set a key-value pair
 db.set('myKey', 'myValue');
@@ -48,8 +49,7 @@ console.log(value); // Output: myValue
 
 ## Documentation
 
-For detailed documentation, including API reference and usage examples, refer to the [MyQuickDB Documentation](https://your-documentation-link).
-
+For detailed documentation, including API reference and usage examples, refer to the [MyQuickDB Documentation](comingsoon),
 ## Contributing
 
 Contributions are welcome! Fork the repository, make your changes, and submit a pull request. Please make sure to follow the coding guidelines and add tests for any new features.
