@@ -58,16 +58,25 @@ export class Collection extends EventEmitter {
     }
 
     public async connect(): Promise<void> {
-        if (this.cassandraDriver) {
+        if (this.mongodbStorage) {
+            await this.mongodbStorage.connect();
+        } else if (this.postgresqlStorage) {
+            await this.postgresqlStorage.connect();
+        } else if (this.cassandraDriver) {
             await this.cassandraDriver.connect();
         }
     }
 
     public async disconnect(): Promise<void> {
-        if (this.cassandraDriver) {
+        if (this.mongodbStorage) {
+            await this.mongodbStorage.disconnect();
+        } else if (this.postgresqlStorage) {
+            await this.postgresqlStorage.disconnect();
+        } else if (this.cassandraDriver) {
             await this.cassandraDriver.disconnect();
         }
     }
+
 
     public async set(key: string, value: any, ttl?: number): Promise<void> {
         validateKey(key);
