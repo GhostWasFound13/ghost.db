@@ -1,4 +1,8 @@
-
+# status development
+```
+under work in progress
+```
+this message development will be removed soon after full realase beta
 # nitro.db
 
 nitro.db is a lightweight and versatile database management package for Node.js, written in TypeScript. It provides an easy-to-use interface for storing, retrieving, and managing data using various storage options.
