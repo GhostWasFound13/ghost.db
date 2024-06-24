@@ -1,7 +1,7 @@
 import fs from 'fs';
-import { parseValue } from '../utils/parse';
+import { parseValue, ParseOptions } from '../utils/parse';
 
-interface JSONDriverOptions {
+export interface JSONDriverOptions {
     path?: string;
     format?: boolean;
 }
@@ -10,9 +10,7 @@ export class JSONDriver {
     public readonly path: string;
     public readonly format: boolean;
 
-    constructor(
-        public readonly options?: JSONDriverOptions
-    ) {
+    constructor(public readonly options?: JSONDriverOptions) {
         this.path = options?.path || './db.json';
         this.format = options?.format || false;
     }
@@ -33,7 +31,7 @@ export class JSONDriver {
         }
     }
 
-    public createTable(table: string): void {
+    public createTable(table: string): boolean {
         if (!this.checkFile()) {
             fs.writeFileSync(this.path, JSON.stringify({}));
         }
@@ -43,6 +41,8 @@ export class JSONDriver {
             data[table] = {};
             this.write(data);
         }
+
+        return true;
     }
 
     public tables(): string[] {
@@ -50,18 +50,20 @@ export class JSONDriver {
     }
 
     // Inserters/Updaters
-    public insert(table: string, entries: { key: string; value: any }[]): void {
+    public insert(table: string, array: { key: string; value: any }[]): boolean {
         const data = this.read();
-        entries.forEach(({ key, value }) => {
+        for (const { key, value } of array) {
             data[table][key] = value;
-        });
+        }
         this.write(data);
+        return true;
     }
 
-    public setRowByKey(table: string, key: string, value: any): void {
+    public setRowByKey(table: string, key: string, value: any): boolean {
         const data = this.read();
         data[table][key] = value;
         this.write(data);
+        return true;
     }
 
     // Getters
@@ -74,50 +76,26 @@ export class JSONDriver {
     }
 
     // Deleters
-    public deleteRowByKey(table: string, key: string): boolean {
+    public deleteRowByKey(table: string, key: string): number {
         const data = this.read();
-        if (data[table] && data[table][key]) {
-            delete data[table][key];
-            this.write(data);
-            return true;
-        }
-        return false;
+        delete data[table][key];
+        this.write(data);
+        return 1;
     }
 
     public deleteAllRows(table: string): boolean {
         const data = this.read();
-        if (data[table]) {
-            delete data[table];
-            this.write(data);
-            return true;
-        }
-        return false;
-    }
-
-    // Batch operations
-    public batchInsert(table: string, entries: { key: string; value: any }[]): void {
-        const data = this.read();
-        entries.forEach(({ key, value }) => {
-            data[table][key] = value;
-        });
+        delete data[table];
         this.write(data);
+        return true;
     }
 
-    public batchDelete(table: string, keys: string[]): void {
-        const data = this.read();
-        keys.forEach(key => {
-            delete data[table][key];
-        });
-        this.write(data);
-    }
-
-    // Read and write operations
     public read(): any {
         if (!this.checkFile()) {
             return {};
         }
         const fileContent = fs.readFileSync(this.path, 'utf-8');
-        return parseValue(fileContent, {});
+        return parseValue(fileContent, {}, { type: 'json' });
     }
 
     public write(data: any): void {
@@ -125,7 +103,6 @@ export class JSONDriver {
         fs.writeFileSync(this.path, jsonData);
     }
 
-    // Clear the database
     public clear(): void {
         this.write({});
     }
